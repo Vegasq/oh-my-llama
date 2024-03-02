@@ -14,11 +14,6 @@ import (
 	"net/http"
 )
 
-type OML struct {
-	modelNameWidget string
-	window          *fyne.Window
-}
-
 type APIResponse struct {
 	Model     string `json:"model"`
 	CreatedAt string `json:"created_at"`
@@ -33,43 +28,54 @@ type APIError struct {
 	Error string `json:"error"`
 }
 
-func main() {
-	oml := OML{}
-	omlApp := app.New()
-	window := omlApp.NewWindow("Oh My LLama")
-
-	oml.window = &window
-
-	input := widget.NewMultiLineEntry()
-	input.SetPlaceHolder("Type your query...")
-	chatHistory := widget.NewMultiLineEntry()
-	chatHistory.Wrapping = fyne.TextWrapWord
-
-	modelNames := []string{"gemma", "llama2", "mistral", "codellama"}
-
-	modelNameInput := widget.NewSelect(modelNames, func(name string) {
-		oml.modelNameWidget = name
-		go pullModel(chatHistory, &oml)
-	})
-	modelNameInput.SetSelected(modelNames[0])
-
-	sendButton := widget.NewButton("Send", func() {
-		go sendMessage(input.Text, chatHistory, &oml)
-		input.SetText("") // Clear the input after sending
-	})
-	header := container.NewVBox(modelNameInput)
-	footer := container.NewVBox(input, sendButton)
-	borderLayout := layout.NewBorderLayout(header, footer, nil, nil)
-	content := container.New(borderLayout, header, chatHistory, footer)
-
-	window.SetContent(content)
-	window.Resize(fyne.NewSize(400, 600))
-	window.ShowAndRun()
+type OMLApp struct {
+	ModelName   string
+	MainWindow  *fyne.Window
+	ModelNames  []string
+	ChatHistory *widget.Entry
+	InputField  *widget.Entry
 }
 
-func pullModel(entry *widget.Entry, oml *OML) {
+func NewOMLApp() *OMLApp {
+	omlApp := app.New()
+	window := omlApp.NewWindow("Oh My Llama")
+
+	return &OMLApp{
+		MainWindow:  &window,
+		ModelNames:  []string{"gemma", "llama2", "mistral", "codellama"},
+		ChatHistory: widget.NewMultiLineEntry(),
+		InputField:  widget.NewMultiLineEntry(),
+	}
+}
+
+func (oml *OMLApp) SetupUI() {
+	oml.InputField.SetPlaceHolder("Type your query...")
+	oml.ChatHistory.Wrapping = fyne.TextWrapWord
+
+	modelNameInput := widget.NewSelect(oml.ModelNames, func(name string) {
+		oml.ModelName = name
+		oml.PullModel()
+	})
+	modelNameInput.SetSelected(oml.ModelNames[0])
+
+	sendButton := widget.NewButton("Send", func() {
+		oml.SendMessage(oml.InputField.Text)
+		oml.InputField.SetText("") // Clear the input after sending
+	})
+
+	header := container.NewVBox(modelNameInput)
+	footer := container.NewVBox(oml.InputField, sendButton)
+	borderLayout := layout.NewBorderLayout(header, footer, nil, nil)
+	content := container.New(borderLayout, header, oml.ChatHistory, footer)
+
+	(*oml.MainWindow).SetContent(content)
+	(*oml.MainWindow).Resize(fyne.NewSize(400, 600))
+	(*oml.MainWindow).ShowAndRun()
+}
+
+func (oml *OMLApp) PullModel() {
 	url := "http://localhost:11434/api/pull"
-	payload := map[string]string{"name": oml.modelNameWidget}
+	payload := map[string]string{"name": oml.ModelName}
 	bytesRepresentation, err := json.Marshal(payload)
 	if err != nil {
 		log.Fatalln(err)
@@ -83,21 +89,21 @@ func pullModel(entry *widget.Entry, oml *OML) {
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		entry.Text += line + "\n"
-		entry.Refresh()
+		oml.ChatHistory.Text += line + "\n"
+		oml.ChatHistory.Refresh()
 
 		// Scroller to the bottom
-		focusedItem := (*oml.window).Canvas().Focused()
-		if focusedItem == nil || focusedItem != entry {
-			entry.CursorRow = len(entry.Text) - 1 // Sets the cursor to the end
+		focusedItem := (*oml.MainWindow).Canvas().Focused()
+		if focusedItem == nil || focusedItem != oml.ChatHistory {
+			oml.ChatHistory.CursorRow = len(oml.ChatHistory.Text) - 1 // Sets the cursor to the end
 		}
 	}
 }
 
-func sendMessage(message string, entry *widget.Entry, oml *OML) {
+func (oml *OMLApp) SendMessage(message string) {
 	url := "http://localhost:11434/api/chat"
 	payload := map[string]interface{}{
-		"model":    oml.modelNameWidget,
+		"model":    oml.ModelName,
 		"messages": []map[string]string{{"role": "user", "content": message}},
 	}
 	bytesRepresentation, err := json.Marshal(payload)
@@ -118,8 +124,8 @@ func sendMessage(message string, entry *widget.Entry, oml *OML) {
 		json.Unmarshal([]byte(line), &apiError)
 		if apiError.Error != "" {
 			fmt.Println(apiError.Error, "!")
-			entry.Text += apiError.Error + "\n"
-			entry.Refresh()
+			oml.ChatHistory.Text += apiError.Error + "\n"
+			oml.ChatHistory.Refresh()
 
 			return
 		}
@@ -131,17 +137,22 @@ func sendMessage(message string, entry *widget.Entry, oml *OML) {
 			continue
 		}
 		if response.Message.Role == "assistant" {
-			entry.Text += response.Message.Content
-			entry.Refresh()
+			oml.ChatHistory.Text += response.Message.Content
+			oml.ChatHistory.Refresh()
 
 			// Scroller to the bottom
-			focusedItem := (*oml.window).Canvas().Focused()
-			if focusedItem == nil || focusedItem != entry {
-				entry.CursorRow = len(entry.Text) - 1 // Sets the cursor to the end
+			focusedItem := (*oml.MainWindow).Canvas().Focused()
+			if focusedItem == nil || focusedItem != oml.ChatHistory {
+				oml.ChatHistory.CursorRow = len(oml.ChatHistory.Text) - 1 // Sets the cursor to the end
 			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		log.Fatalln("Error reading response:", err)
 	}
+}
+
+func main() {
+	oml := NewOMLApp()
+	oml.SetupUI()
 }
