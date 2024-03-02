@@ -16,6 +16,7 @@ import (
 
 type OML struct {
 	modelNameWidget string
+	window          *fyne.Window
 }
 
 type APIResponse struct {
@@ -34,20 +35,23 @@ type APIError struct {
 
 func main() {
 	oml := OML{}
-	myApp := app.New()
-	myWindow := myApp.NewWindow("Oh My LLama")
+	omlApp := app.New()
+	window := omlApp.NewWindow("Oh My LLama")
 
-	modelNames := []string{"gemma", "llama2", "mistral", "codellama"}
-
-	modelNameInput := widget.NewSelect(modelNames, func(name string) {
-		oml.modelNameWidget = name
-	})
-	modelNameInput.SetSelected(modelNames[0])
+	oml.window = &window
 
 	input := widget.NewMultiLineEntry()
 	input.SetPlaceHolder("Type your query...")
 	chatHistory := widget.NewMultiLineEntry()
 	chatHistory.Wrapping = fyne.TextWrapWord
+
+	modelNames := []string{"gemma", "llama2", "mistral", "codellama"}
+
+	modelNameInput := widget.NewSelect(modelNames, func(name string) {
+		oml.modelNameWidget = name
+		go pullModel(chatHistory, &oml)
+	})
+	modelNameInput.SetSelected(modelNames[0])
 
 	sendButton := widget.NewButton("Send", func() {
 		go sendMessage(input.Text, chatHistory, &oml)
@@ -58,9 +62,36 @@ func main() {
 	borderLayout := layout.NewBorderLayout(header, footer, nil, nil)
 	content := container.New(borderLayout, header, chatHistory, footer)
 
-	myWindow.SetContent(content)
-	myWindow.Resize(fyne.NewSize(400, 600))
-	myWindow.ShowAndRun()
+	window.SetContent(content)
+	window.Resize(fyne.NewSize(400, 600))
+	window.ShowAndRun()
+}
+
+func pullModel(entry *widget.Entry, oml *OML) {
+	url := "http://localhost:11434/api/pull"
+	payload := map[string]string{"name": oml.modelNameWidget}
+	bytesRepresentation, err := json.Marshal(payload)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(bytesRepresentation))
+	if err != nil {
+		log.Fatalln(err)
+	}
+	defer resp.Body.Close()
+	scanner := bufio.NewScanner(resp.Body)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		entry.Text += line + "\n"
+		entry.Refresh()
+
+		// Scroller to the bottom
+		focusedItem := (*oml.window).Canvas().Focused()
+		if focusedItem == nil || focusedItem != entry {
+			entry.CursorRow = len(entry.Text) - 1 // Sets the cursor to the end
+		}
+	}
 }
 
 func sendMessage(message string, entry *widget.Entry, oml *OML) {
@@ -89,6 +120,7 @@ func sendMessage(message string, entry *widget.Entry, oml *OML) {
 			fmt.Println(apiError.Error, "!")
 			entry.Text += apiError.Error + "\n"
 			entry.Refresh()
+
 			return
 		}
 
@@ -101,6 +133,12 @@ func sendMessage(message string, entry *widget.Entry, oml *OML) {
 		if response.Message.Role == "assistant" {
 			entry.Text += response.Message.Content
 			entry.Refresh()
+
+			// Scroller to the bottom
+			focusedItem := (*oml.window).Canvas().Focused()
+			if focusedItem == nil || focusedItem != entry {
+				entry.CursorRow = len(entry.Text) - 1 // Sets the cursor to the end
+			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
