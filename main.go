@@ -62,6 +62,7 @@ func (oml *OMLApp) SetupUI() {
 	modelNameInput.SetSelected(oml.ModelNames[0])
 
 	sendButton := widget.NewButton("Send", func() {
+		oml.ChatHistory.Text += "\nYou: " + oml.InputField.Text + "\n\n"
 		oml.SendMessage(oml.InputField.Text)
 		oml.InputField.SetText("") // Clear the input after sending
 	})
@@ -70,29 +71,41 @@ func (oml *OMLApp) SetupUI() {
 		oml.ShowSettings()
 	})
 
-	header := container.NewVBox(modelNameInput, settingsButton)
-	footer := container.NewVBox(oml.InputField, sendButton)
-	borderLayout := layout.NewBorderLayout(header, footer, nil, nil)
-	content := container.New(borderLayout, header, oml.ChatHistory, footer)
+	tabs := container.NewVBox(
+		settingsButton,
+		widget.NewButton("+ New Chat", func() {
+			oml.ChatHistory.Text = ""
+			oml.ChatHistory.Refresh()
+		}),
+	)
 
+	header := container.NewVBox(modelNameInput)
+	footer := container.NewVBox(oml.InputField, sendButton)
+	borderLayout := layout.NewBorderLayout(header, footer, tabs, nil)
+	content := container.New(borderLayout, header, oml.ChatHistory, footer, tabs)
 	(*oml.MainWindow).SetContent(content)
-	(*oml.MainWindow).Resize(fyne.NewSize(400, 600))
+	(*oml.MainWindow).Resize(fyne.NewSize(1024, 768))
 	(*oml.MainWindow).ShowAndRun()
 }
 
 func (oml *OMLApp) ShowSettings() {
 	w := fyne.CurrentApp().NewWindow("Settings")
 
+	// API Settings Tab
 	hostEntry := widget.NewEntry()
 	hostEntry.SetText(oml.APIHost)
+	apiSettingsContent := container.NewVBox(
+		widget.NewLabel("API Host"),
+		hostEntry,
+	)
 
+	// Model Management Tab
 	modelList := widget.NewList(
 		func() int {
 			return len(oml.ModelNames)
 		},
 		func() fyne.CanvasObject {
-			hbox := container.NewHBox(widget.NewLabel(""), widget.NewButton("Remove", func() {}))
-			return hbox
+			return container.NewHBox(widget.NewLabel(""), widget.NewButton("Remove", func() {}))
 		},
 		func(i widget.ListItemID, o fyne.CanvasObject) {
 			o.(*fyne.Container).Objects[0].(*widget.Label).SetText(oml.ModelNames[i])
@@ -101,10 +114,9 @@ func (oml *OMLApp) ShowSettings() {
 			}
 		},
 	)
-
 	addModelEntry := widget.NewEntry()
 	addModelEntry.SetPlaceHolder("Add new model")
-
+	addModelEntry.Resize(fyne.NewSize(100, 10))
 	addButton := widget.NewButton("Add", func() {
 		if addModelEntry.Text != "" {
 			oml.ModelNames = append(oml.ModelNames, addModelEntry.Text)
@@ -112,7 +124,21 @@ func (oml *OMLApp) ShowSettings() {
 			addModelEntry.SetText("") // Clear the entry after adding
 		}
 	})
+	headContent := container.NewVBox(
+		addModelEntry,
+		addButton,
+	)
 
+	borderLayout := layout.NewBorderLayout(headContent, nil, nil, nil)
+	modelManagementContent := container.New(borderLayout, headContent, modelList)
+
+	// Tabs
+	tabs := container.NewAppTabs(
+		container.NewTabItem("API Settings", apiSettingsContent),
+		container.NewTabItem("Model Management", modelManagementContent),
+	)
+
+	// Save and Cancel Buttons (common for all tabs)
 	saveButton := widget.NewButton("Save", func() {
 		oml.APIHost = hostEntry.Text
 		if strings.TrimSuffix(oml.APIHost, "/") != oml.APIHost {
@@ -120,22 +146,16 @@ func (oml *OMLApp) ShowSettings() {
 		}
 		w.Close()
 	})
-
 	cancelButton := widget.NewButton("Cancel", func() {
 		w.Close()
 	})
+	buttons := container.NewHBox(saveButton, cancelButton)
 
-	content := container.NewVBox(
-		widget.NewLabel("API Host"),
-		hostEntry,
-		addModelEntry,
-		container.NewHBox(addButton),
-		widget.NewLabel("Models"),
-		modelList,
-		container.NewHBox(saveButton, cancelButton),
-	)
+	settingsLayout := layout.NewBorderLayout(nil, buttons, nil, nil)
+	settingsContent := container.New(settingsLayout, buttons, tabs)
 
-	w.SetContent(content)
+	// Setting the window content
+	w.SetContent(settingsContent)
 	w.Resize(fyne.NewSize(300, 400)) // Adjusted for additional content
 	w.Show()
 }
