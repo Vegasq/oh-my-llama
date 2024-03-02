@@ -12,6 +12,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 	"log"
 	"net/http"
+	"strings"
 )
 
 type APIResponse struct {
@@ -34,6 +35,7 @@ type OMLApp struct {
 	ModelNames  []string
 	ChatHistory *widget.Entry
 	InputField  *widget.Entry
+	APIHost     string
 }
 
 func NewOMLApp() *OMLApp {
@@ -45,6 +47,7 @@ func NewOMLApp() *OMLApp {
 		ModelNames:  []string{"gemma", "llama2", "mistral", "codellama"},
 		ChatHistory: widget.NewMultiLineEntry(),
 		InputField:  widget.NewMultiLineEntry(),
+		APIHost:     "http://localhost:11434",
 	}
 }
 
@@ -63,7 +66,11 @@ func (oml *OMLApp) SetupUI() {
 		oml.InputField.SetText("") // Clear the input after sending
 	})
 
-	header := container.NewVBox(modelNameInput)
+	settingsButton := widget.NewButton("Settings", func() {
+		oml.ShowSettings()
+	})
+
+	header := container.NewVBox(modelNameInput, settingsButton)
 	footer := container.NewVBox(oml.InputField, sendButton)
 	borderLayout := layout.NewBorderLayout(header, footer, nil, nil)
 	content := container.New(borderLayout, header, oml.ChatHistory, footer)
@@ -73,8 +80,39 @@ func (oml *OMLApp) SetupUI() {
 	(*oml.MainWindow).ShowAndRun()
 }
 
+func (oml *OMLApp) ShowSettings() {
+	w := fyne.CurrentApp().NewWindow("Settings")
+
+	hostEntry := widget.NewEntry()
+	hostEntry.SetText(oml.APIHost)
+
+	saveButton := widget.NewButton("Save", func() {
+		oml.APIHost = hostEntry.Text
+		if strings.TrimSuffix(oml.APIHost, "/") != oml.APIHost {
+			oml.APIHost = strings.TrimSuffix(oml.APIHost, "/")
+		}
+		w.Close()
+	})
+
+	cancelButton := widget.NewButton("Cancel", func() {
+		w.Close()
+	})
+
+	content := container.NewVBox(
+		widget.NewLabel("API Host"),
+		hostEntry,
+		container.NewHBox(
+			saveButton,
+			cancelButton,
+		),
+	)
+
+	w.SetContent(content)
+	w.Show()
+}
+
 func (oml *OMLApp) PullModel() {
-	url := "http://localhost:11434/api/pull"
+	url := oml.APIHost + "/api/pull"
 	payload := map[string]string{"name": oml.ModelName}
 	bytesRepresentation, err := json.Marshal(payload)
 	if err != nil {
@@ -101,7 +139,7 @@ func (oml *OMLApp) PullModel() {
 }
 
 func (oml *OMLApp) SendMessage(message string) {
-	url := "http://localhost:11434/api/chat"
+	url := oml.APIHost + "/api/chat"
 	payload := map[string]interface{}{
 		"model":    oml.ModelName,
 		"messages": []map[string]string{{"role": "user", "content": message}},
