@@ -86,6 +86,33 @@ func (oml *OMLApp) ShowSettings() {
 	hostEntry := widget.NewEntry()
 	hostEntry.SetText(oml.APIHost)
 
+	modelList := widget.NewList(
+		func() int {
+			return len(oml.ModelNames)
+		},
+		func() fyne.CanvasObject {
+			hbox := container.NewHBox(widget.NewLabel(""), widget.NewButton("Remove", func() {}))
+			return hbox
+		},
+		func(i widget.ListItemID, o fyne.CanvasObject) {
+			o.(*fyne.Container).Objects[0].(*widget.Label).SetText(oml.ModelNames[i])
+			o.(*fyne.Container).Objects[1].(*widget.Button).OnTapped = func() {
+				oml.ModelNames = append(oml.ModelNames[:i], oml.ModelNames[i+1:]...)
+			}
+		},
+	)
+
+	addModelEntry := widget.NewEntry()
+	addModelEntry.SetPlaceHolder("Add new model")
+
+	addButton := widget.NewButton("Add", func() {
+		if addModelEntry.Text != "" {
+			oml.ModelNames = append(oml.ModelNames, addModelEntry.Text)
+			modelList.Refresh()
+			addModelEntry.SetText("") // Clear the entry after adding
+		}
+	})
+
 	saveButton := widget.NewButton("Save", func() {
 		oml.APIHost = hostEntry.Text
 		if strings.TrimSuffix(oml.APIHost, "/") != oml.APIHost {
@@ -101,13 +128,15 @@ func (oml *OMLApp) ShowSettings() {
 	content := container.NewVBox(
 		widget.NewLabel("API Host"),
 		hostEntry,
-		container.NewHBox(
-			saveButton,
-			cancelButton,
-		),
+		addModelEntry,
+		container.NewHBox(addButton),
+		widget.NewLabel("Models"),
+		modelList,
+		container.NewHBox(saveButton, cancelButton),
 	)
 
 	w.SetContent(content)
+	w.Resize(fyne.NewSize(300, 400)) // Adjusted for additional content
 	w.Show()
 }
 
